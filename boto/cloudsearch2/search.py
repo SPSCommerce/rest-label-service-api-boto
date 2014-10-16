@@ -278,7 +278,9 @@ class SearchConnection(object):
         url = "http://%s/%s/search" % (self.endpoint, api_version)
         params = query.to_params()
 
-        r = self.session.get(url, params=params)
+        r2 = self.domain.layer1.make_dummy_request_for_cloudsearch2( action=None, params=params, path='/'+api_version+'/search', verb='GET', host=self.endpoint)
+        r = self.session.get(url, params=params, headers = r2.headers)
+
         _body = r.content.decode('utf-8')
         try:
             data = json.loads(_body)
@@ -294,6 +296,11 @@ class SearchConnection(object):
                 raise SearchServiceException('Authentication error from Amazon%s' % msg)
             raise SearchServiceException("Got non-json response from Amazon. %s" % _body, query)
 
+        if '__type' in data and data['__type']=='#AccessDenied':
+            message = 'Access Denied'
+            if 'message' in data:
+                message = data['message']
+            raise SearchServiceException(message, '#AccessDenied')
         if 'messages' in data and 'error' in data:
             for m in data['messages']:
                 if m['severity'] == 'fatal':

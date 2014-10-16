@@ -198,8 +198,9 @@ class DocumentServiceConnection(object):
         )
         session.mount('http://', adapter)
         session.mount('https://', adapter)
+        r2 = self.domain.layer1.make_dummy_request_for_cloudsearch2( action=None, path='/'+api_version+'/documents/batch', verb='POST', host=self.endpoint,headers={'Content-Type': 'application/json'}, data=sdf)
         r = session.post(url, data=sdf,
-                         headers={'Content-Type': 'application/json'})
+                         headers=r2.headers)
 
         return CommitResponse(r, self, sdf)
 

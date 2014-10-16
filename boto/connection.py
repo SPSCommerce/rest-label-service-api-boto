@@ -1111,6 +1111,17 @@ class AWSQueryConnection(AWSAuthConnection):
             http_request.params['Version'] = self.APIVersion
         return self._mexe(http_request)
 
+    def make_dummy_request_for_cloudsearch2(self, action, params=None, path='/', verb='GET', host = None, data='', headers={}):
+        http_request = self.build_base_http_request(verb, path, None,
+                                                    params, headers, data,
+                                                    host)
+        self._auth_handler.add_auth(req=http_request, override_for_cloudsearch=True)
+        if action:
+            http_request.params['Action'] = action
+        if self.APIVersion:
+            http_request.params['Version'] = self.APIVersion
+        return http_request
+
     def build_list_params(self, params, items, label):
         if isinstance(items, six.string_types):
             items = [items]
