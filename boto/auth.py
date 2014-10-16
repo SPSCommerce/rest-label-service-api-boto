@@ -234,7 +234,7 @@ class HmacAuthV3HTTPHandler(AuthHandler, HmacKeys):
         them into a string, separated by newlines.
         """
         l = sorted(['%s:%s' % (n.lower().strip(),
-                    headers_to_sign[n].strip()) for n in headers_to_sign])
+                               headers_to_sign[n].strip()) for n in headers_to_sign])
         return '\n'.join(l)
 
     def string_to_sign(self, http_request):
@@ -305,12 +305,15 @@ class HmacAuthV4Handler(AuthHandler, HmacKeys):
             sig = hmac.new(key, msg.encode('utf-8'), sha256).digest()
         return sig
 
-    def headers_to_sign(self, http_request):
+    def headers_to_sign(self, http_request, override_for_cloudsearch=False):
         """
         Select the headers from the request that need to be included
         in the StringToSign.
         """
-        host_header_value = self.host_header(self.host, http_request)
+        if override_for_cloudsearch:
+            host_header_value = http_request.host
+        else:
+            host_header_value = self.host_header(self.host, http_request)
         headers_to_sign = {'Host': host_header_value}
         for name, value in http_request.headers.items():
             lname = name.lower()
@@ -394,21 +397,24 @@ class HmacAuthV4Handler(AuthHandler, HmacKeys):
             body = body.encode('utf-8')
         return sha256(body).hexdigest()
 
-    def canonical_request(self, http_request):
+    def canonical_request(self, http_request, override_for_cloudsearch=False):
         cr = [http_request.method.upper()]
         cr.append(self.canonical_uri(http_request))
         cr.append(self.canonical_query_string(http_request))
-        headers_to_sign = self.headers_to_sign(http_request)
+        headers_to_sign = self.headers_to_sign(http_request, override_for_cloudsearch=override_for_cloudsearch)
         cr.append(self.canonical_headers(headers_to_sign) + '\n')
         cr.append(self.signed_headers(headers_to_sign))
         cr.append(self.payload(http_request))
         return '\n'.join(cr)
 
-    def scope(self, http_request):
+    def scope(self, http_request, override_for_cloudsearch=False):
         scope = [self._provider.access_key]
         scope.append(http_request.timestamp)
         scope.append(http_request.region_name)
-        scope.append(http_request.service_name)
+        if override_for_cloudsearch:
+            scope.append('cloudsearch')
+        else:
+            scope.append(http_request.service_name)
         scope.append('aws4_request')
         return '/'.join(scope)
 
@@ -440,7 +446,7 @@ class HmacAuthV4Handler(AuthHandler, HmacKeys):
             service_name = parts[0]
         return service_name
 
-    def credential_scope(self, http_request):
+    def credential_scope(self, http_request, override_for_cloudsearch=False):
         scope = []
         http_request.timestamp = http_request.headers['X-Amz-Date'][0:8]
         scope.append(http_request.timestamp)
@@ -448,7 +454,10 @@ class HmacAuthV4Handler(AuthHandler, HmacKeys):
         # * The service_name/region_name attrs or (if these values are None)
         # * parsed from the endpoint <service>.<region>.amazonaws.com.
         region_name = self.determine_region_name(http_request.host)
-        service_name = self.determine_service_name(http_request.host)
+        if override_for_cloudsearch:
+            service_name = 'cloudsearch'
+        else:
+            service_name = self.determine_service_name(http_request.host)
         http_request.service_name = service_name
         http_request.region_name = region_name
 
@@ -457,7 +466,7 @@ class HmacAuthV4Handler(AuthHandler, HmacKeys):
         scope.append('aws4_request')
         return '/'.join(scope)
 
-    def string_to_sign(self, http_request, canonical_request):
+    def string_to_sign(self, http_request, canonical_request, override_for_cloudsearch=False):
         """
         Return the canonical StringToSign as well as a dict
         containing the original version of all headers that
@@ -465,7 +474,7 @@ class HmacAuthV4Handler(AuthHandler, HmacKeys):
         """
         sts = ['AWS4-HMAC-SHA256']
         sts.append(http_request.headers['X-Amz-Date'])
-        sts.append(self.credential_scope(http_request))
+        sts.append(self.credential_scope(http_request, override_for_cloudsearch=override_for_cloudsearch))
         sts.append(sha256(canonical_request.encode('utf-8')).hexdigest())
         return '\n'.join(sts)
 
@@ -487,6 +496,9 @@ class HmacAuthV4Handler(AuthHandler, HmacKeys):
         """
         # This could be a retry.  Make sure the previous
         # authorization header is removed first.
+        override_for_cloudsearch = False
+        if 'override_for_cloudsearch' in kwargs:
+            override_for_cloudsearch = True
         if 'X-Amzn-Authorization' in req.headers:
             del req.headers['X-Amzn-Authorization']
         now = datetime.datetime.utcnow()
@@ -508,9 +520,9 @@ class HmacAuthV4Handler(AuthHandler, HmacKeys):
             if qs:
                 # Don't insert the '?' unless there's actually a query string
                 req.path = req.path + '?' + qs
-        canonical_request = self.canonical_request(req)
+        canonical_request = self.canonical_request(req, override_for_cloudsearch=override_for_cloudsearch)
         boto.log.debug('CanonicalRequest:\n%s' % canonical_request)
-        string_to_sign = self.string_to_sign(req, canonical_request)
+        string_to_sign = self.string_to_sign(req, canonical_request, override_for_cloudsearch=override_for_cloudsearch)
         boto.log.debug('StringToSign:\n%s' % string_to_sign)
         signature = self.signature(req, string_to_sign)
         boto.log.debug('Signature:\n%s' % signature)
