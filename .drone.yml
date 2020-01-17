@@ -12,14 +12,7 @@ pipeline:
       - pytest
     when:
       event: [push, pull_request]
-      branch: master
-
-  tag:
-    image: spscommerce/plugin-semantic-release
-    when:
-      event: push
-      branch:
-        - master
+      branch: develop
 
   publish_wheel:
     image: spscommerce/drone-plugin-python-artifactory
@@ -27,4 +20,4 @@ pipeline:
     build_package: true
     when:
       event: [tag]
-      branch: master
+      branch: develop
